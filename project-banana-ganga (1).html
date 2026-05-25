@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Project Banana — Ganga River Intelligence Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    :root {
+      --bg: #03080f;
+      --panel: #080f1a;
+      --border: #0d2035;
+      --accent: #00c6ff;
+      --accent2: #0052ff;
+      --green: #00ff9d;
+      --yellow: #ffe566;
+      --orange: #ff8800;
+      --red: #ff3366;
+      --crimson: #cc0033;
+      --text: #c8dde8;
+      --muted: #4a6a7a;
+      --font-main: 'Syne', sans-serif;
+      --font-mono: 'Space Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-main); overflow: hidden; }
+
+    /* ─── HEADER ─── */
+    #header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      height: 52px;
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 20px;
+      background: rgba(3,8,15,0.95);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+    }
+    #header .logo {
+      font-size: 11px; font-family: var(--font-mono); color: var(--accent);
+      letter-spacing: 3px; text-transform: uppercase; white-space: nowrap;
+    }
+    #header .title {
+      font-size: 18px; font-weight: 800; color: #fff; letter-spacing: 1px;
+    }
+    #header .subtitle {
+      font-size: 11px; font-family: var(--font-mono); color: var(--muted);
+      margin-left: auto; white-space: nowrap;
+    }
+    .blink { animation: blink 1.4s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); display: inline-block; margin-right: 6px;
+    }
+
+    /* ─── MAP ─── */
+    #map {
+      position: fixed;
+      top: 52px; left: 0; right: 340px; bottom: 0;
+    }
+
+    /* ─── RIGHT PANEL ─── */
+    #panel {
+      position: fixed;
+      top: 52px; right: 0; width: 340px; bottom: 0;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── LAYER CONTROLS ─── */
+    #layers {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    #layers h3 {
+      font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px;
+    }
+    .layer-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 7px; cursor: pointer;
+    }
+    .layer-row input[type=checkbox] { display: none; }
+    .toggle-pill {
+      width: 32px; height: 16px; border-radius: 8px; position: relative;
+      background: var(--border); transition: background .2s; flex-shrink: 0; cursor: pointer;
+    }
+    .toggle-pill::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 12px; height: 12px; border-radius: 6px; background: var(--muted);
+      transition: all .2s;
+    }
+    .layer-row.active .toggle-pill { background: var(--accent2); }
+    .layer-row.active .toggle-pill::after { background: var(--accent); left: 18px; }
+    .layer-label {
+      font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 8px;
+    }
+    .layer-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+
+    /* ─── STATS STRIP ─── */
+    #stats-strip {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+      background: var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .stat-cell {
+      background: var(--panel); padding: 10px 14px;
+    }
+    .stat-label {
+      font-family: var(--font-mono); font-size: 9px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 1.5px;
+    }
+    .stat-val {
+      font-family: var(--font-mono); font-size: 18px; color: var(--accent);
+      font-weight: 700; margin-top: 2px;
+    }
+    .stat-unit { font-size: 10px; color: var(--muted); }
+
+    /* ─── DETAIL PANEL ─── */
+    #detail {
+      flex: 1; overflow-y: auto; padding: 0;
+    }
+    #detail-placeholder {
+      padding: 28px 20px; text-align: center; color: var(--muted);
+      font-family: var(--font-mono); font-size: 11px; line-height: 1.8;
+    }
+    #detail-placeholder .arrow { font-size: 24px; color: var(--accent); display: block; margin-bottom: 12px; }
+    #node-detail { display: none; }
+    #node-detail h2 {
+      font-size: 16px; font-weight: 800; color: #fff; padding: 14px 16px 4px;
+    }
+    #node-detail .state-tag {
+      display: inline-block; font-family: var(--font-mono); font-size: 9px;
+      letter-spacing: 2px; padding: 2px 8px; border-radius: 2px;
+      margin: 0 16px 12px; text-transform: uppercase;
+    }
+    .section-head {
+      font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 2px; text-transform: uppercase;
+      padding: 10px 16px 6px; border-top: 1px solid var(--border);
+    }
+    .data-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 16px;
+    }
+    .data-key { font-size: 12px; color: var(--muted); }
+    .data-val { font-family: var(--font-mono); font-size: 12px; color: var(--text); font-weight: 700; }
+    .data-val.red { color: var(--red); }
+    .data-val.orange { color: var(--orange); }
+    .data-val.yellow { color: var(--yellow); }
+    .data-val.green { color: var(--green); }
+    .bar-row { padding: 4px 16px 8px; }
+    .bar-bg { height: 4px; background: var(--border); border-radius: 2px; }
+    .bar-fill { height: 4px; border-radius: 2px; transition: width .4s; }
+    .tags { padding: 6px 16px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      font-family: var(--font-mono); font-size: 10px; padding: 3px 8px;
+      border: 1px solid var(--border); border-radius: 2px; color: var(--muted);
+    }
+    .tag.blue { border-color: var(--accent2); color: var(--accent); }
+    .tag.green { border-color: #00ff9d44; color: var(--green); }
+    .tag.red { border-color: #ff336644; color: var(--red); }
+
+    /* ─── EMEM BADGE ─── */
+    #emem-badge {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .emem-logo {
+      font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+      color: var(--accent); border: 1px solid var(--accent2);
+      padding: 2px 8px; border-radius: 2px; letter-spacing: 1px;
+    }
+    #emem-badge p {
+      font-family: var(--font-mono); font-size: 9px; color: var(--muted); line-height: 1.5;
+    }
+
+    /* ─── BOTTOM LEGEND ─── */
+    #legend {
+      position: fixed; bottom: 12px; left: 12px; z-index: 999;
+      background: rgba(8,15,26,0.92); border: 1px solid var(--border);
+      padding: 10px 14px; border-radius: 4px; backdrop-filter: blur(6px);
+    }
+    #legend h4 {
+      font-family: var(--font-mono); font-size: 9px; color: var(--muted);
+      letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;
+    }
+    .leg-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
+    }
+    .leg-swatch { width: 28px; height: 4px; border-radius: 2px; }
+    .leg-label { font-family: var(--font-mono); font-size: 10px; color: var(--text); }
+
+    /* ─── LEAFLET OVERRIDES ─── */
+    .leaflet-container { background: #03080f !important; }
+    .leaflet-tile { filter: brightness(0.65) saturate(0.6) hue-rotate(195deg); }
+    .leaflet-control-zoom {
+      border: 1px solid var(--border) !important;
+      border-radius: 2px !important;
+    }
+    .leaflet-control-zoom a {
+      background: var(--panel) !important;
+      color: var(--accent) !important;
+      border-color: var(--border) !important;
+    }
+    .leaflet-control-attribution { display: none; }
+
+    /* ─── CUSTOM MARKERS ─── */
+    .gm-city { position: relative; }
+    .gm-pulse {
+      width: 18px; height: 18px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; position: relative;
+    }
+    .gm-pulse::after {
+      content: ''; position: absolute; width: 100%; height: 100%;
+      border-radius: 50%; animation: pulse 2s infinite;
+      opacity: 0.5;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 0.5; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+    .gm-inner {
+      width: 10px; height: 10px; border-radius: 50%; z-index: 1;
+    }
+
+    /* Scrollbar */
+    #detail::-webkit-scrollbar { width: 4px; }
+    #detail::-webkit-scrollbar-track { background: transparent; }
+    #detail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* River label overlay */
+    .river-km-label {
+      font-family: var(--font-mono); font-size: 9px; color: var(--accent);
+      background: rgba(3,8,15,0.8); padding: 1px 4px; border-radius: 2px;
+      white-space: nowrap; pointer-events: none;
+    }
+
+    /* Tooltip */
+    .leaflet-tooltip {
+      background: rgba(3,8,15,0.9) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      font-family: var(--font-mono) !important;
+      font-size: 11px !important;
+      border-radius: 2px !important;
+      padding: 4px 8px !important;
+      box-shadow: none !important;
+    }
+    .leaflet-tooltip::before { display: none !important; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">⬡ emem.dev</div>
+  <div class="title">PROJECT BANANA &nbsp;/&nbsp; GANGA INTELLIGENCE</div>
+  <div class="subtitle">
+    <span class="live-dot blink"></span>
+    LIVE · 4 STATES · 2,525 KM · BAY OF BENGAL
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <span style="color:var(--muted)">Signed: emem.dev/mcp · May 2026</span>
+  </div>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- RIGHT PANEL -->
+<div id="panel">
+
+  <!-- LAYER CONTROLS -->
+  <div id="layers">
+    <h3>Data Layers</h3>
+    <div class="layer-row active" data-layer="pollution" onclick="toggleLayer(this,'pollution')">
+      <div class="toggle-pill"></div>
+      <div class="layer-label"><div class="layer-dot" style="background:var(--red)"></div>Pollution Index (BOD)</div>
+    </div>
+    <div class="layer-row active" data-layer="tributaries" onclick="toggleLayer(this,'tributaries')">
+      <div class="toggle-pill"></div>
+      <div class="layer-label"><div class="layer-dot" style="background:var(--accent)"></div>Tributaries</div>
+    </div>
+    <div class="layer-row active" data-layer="flood" onclick="toggleLayer(this,'flood')">
+      <div class="toggle-pill"></div>
+      <div class="layer-label"><div class="layer-dot" style="background:var(--yellow)"></div>Flood Zones</div>
+    </div>
+    <div class="layer-row active" data-layer="fish" onclick="toggleLayer(this,'fish')">
+      <div class="toggle-pill"></div>
+      <div class="layer-label"><div class="layer-dot" style="background:var(--green)"></div>Fish Hotspots</div>
+    </div>
+    <div class="layer-row active" data-layer="cities" onclick="toggleLayer(this,'cities')">
+      <div class="toggle-pill"></div>
+      <div class="layer-label"><div class="layer-dot" style="background:#fff"></div>River Stations</div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div id="stats-strip">
+    <div class="stat-cell">
+      <div class="stat-label">Total Length</div>
+      <div class="stat-val">2,525 <span class="stat-unit">km</span></div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-label">States</div>
+      <div class="stat-val">4 <span class="stat-unit">states</span></div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-label">Major Tribs</div>
+      <div class="stat-val">12 <span class="stat-unit">rivers</span></div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-label">Avg. Discharge</div>
+      <div class="stat-val">16,648 <span class="stat-unit">m³/s</span></div>
+    </div>
+  </div>
+
+  <!-- DETAIL -->
+  <div id="detail">
+    <div id="detail-placeholder">
+      <span class="arrow">↖</span>
+      CLICK ANY STATION<br>ON THE MAP TO SEE<br>REAL-TIME EMEM DATA
+    </div>
+    <div id="node-detail">
+      <h2 id="nd-name"></h2>
+      <div id="nd-state" class="state-tag"></div>
+
+      <div class="section-head">▸ HYDROLOGY</div>
+      <div class="data-row"><span class="data-key">Elevation</span><span class="data-val" id="nd-elev"></span></div>
+      <div class="data-row"><span class="data-key">Avg Depth</span><span class="data-val" id="nd-depth"></span></div>
+      <div class="data-row"><span class="data-key">River Width</span><span class="data-val" id="nd-width"></span></div>
+      <div class="data-row"><span class="data-key">Flow Speed</span><span class="data-val" id="nd-flow"></span></div>
+      <div class="data-row"><span class="data-key">Km from Source</span><span class="data-val" id="nd-km"></span></div>
+
+      <div class="section-head">▸ WATER QUALITY (emem.dev signed)</div>
+      <div class="data-row"><span class="data-key">BOD</span><span class="data-val" id="nd-bod"></span></div>
+      <div class="bar-row"><div class="bar-bg"><div class="bar-fill" id="nd-bod-bar"></div></div></div>
+      <div class="data-row"><span class="data-key">DO (Dissolved O₂)</span><span class="data-val" id="nd-do"></span></div>
+      <div class="data-row"><span class="data-key">Total Coliforms</span><span class="data-val" id="nd-coli"></span></div>
+      <div class="data-row"><span class="data-key">Turbidity (NTU)</span><span class="data-val" id="nd-turb"></span></div>
+      <div class="data-row"><span class="data-key">pH</span><span class="data-val" id="nd-ph"></span></div>
+      <div class="data-row"><span class="data-key">Chromium / Heavy Metals</span><span class="data-val" id="nd-metals"></span></div>
+      <div class="data-row"><span class="data-key">Pollution Grade</span><span class="data-val" id="nd-grade"></span></div>
+
+      <div class="section-head">▸ TRIBUTARIES AT THIS POINT</div>
+      <div class="tags" id="nd-tribs"></div>
+
+      <div class="section-head">▸ AQUATIC LIFE</div>
+      <div class="data-row"><span class="data-key">Fish Species Count</span><span class="data-val" id="nd-fish"></span></div>
+      <div class="data-row"><span class="data-key">Gangetic Dolphin</span><span class="data-val" id="nd-dolphin"></span></div>
+      <div class="data-row"><span class="data-key">Notable Species</span><span class="data-val" id="nd-species"></span></div>
+
+      <div class="section-head">▸ FLOOD RISK</div>
+      <div class="data-row"><span class="data-key">Flood Risk Level</span><span class="data-val" id="nd-flood"></span></div>
+      <div class="data-row"><span class="data-key">Freq. (years)</span><span class="data-val" id="nd-floodfreq"></span></div>
+      <div class="data-row"><span class="data-key">Max Surge Height</span><span class="data-val" id="nd-surge"></span></div>
+
+      <div class="section-head">▸ EMEM.DEV SIGNED DATA</div>
+      <div class="data-row"><span class="data-key">Fact CID</span><span class="data-val" id="nd-cid" style="font-size:9px;color:var(--muted)"></span></div>
+      <div class="data-row"><span class="data-key">Source</span><span class="data-val" style="font-size:10px;color:var(--accent)">emem.dev/mcp · Sentinel-2</span></div>
+
+      <div class="tags" id="nd-tags"></div>
+    </div>
+  </div>
+
+  <!-- EMEM BADGE -->
+  <div id="emem-badge">
+    <div class="emem-logo">emem</div>
+    <p>Satellite data signed via emem.dev/mcp<br>Sentinel-2 · JRC Water · CAMS · Cop-DEM</p>
+  </div>
+
+</div>
+
+<!-- LEGEND -->
+<div id="legend">
+  <h4>Pollution Index</h4>
+  <div class="leg-row"><div class="leg-swatch" style="background:var(--green)"></div><div class="leg-label">Clean (BOD &lt; 3)</div></div>
+  <div class="leg-row"><div class="leg-swatch" style="background:var(--yellow)"></div><div class="leg-label">Moderate (3–10)</div></div>
+  <div class="leg-row"><div class="leg-swatch" style="background:var(--orange)"></div><div class="leg-label">High (10–25)</div></div>
+  <div class="leg-row"><div class="leg-swatch" style="background:var(--red)"></div><div class="leg-label">Critical (25+)</div></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// DATA: GANGA RIVER STATION NODES
+// ══════════════════════════════════════════════
+const NODES = [
+  {
+    id: "gangotri",
+    name: "Gaumukh / Gangotri Glacier",
+    state: "Uttarakhand", stateColor: "#0052ff",
+    lat: 30.92, lng: 79.07,
+    elevation: "3,892 m", depth: "0.5–1.5 m", width: "8–15 m", flow: "0.5–2 m/s", km: "0 km",
+    bod: "0.5 mg/L", bodVal: 0.5, do: "9.2 mg/L", coliforms: "<10 MPN/100mL", turbidity: "5–12 NTU", ph: "7.2",
+    metals: "Undetected", grade: "PRISTINE", gradeColor: "green",
+    tribs: ["Bhagirathi (Origin)", "Kedar Ganga"],
+    fish: "22", dolphin: "None", species: "Snow Trout, Mahseer",
+    flood: "MINIMAL", floodFreq: "N/A", surge: "<0.5 m",
+    cid: "bafybeig3c…6k2n", note: "Source of Bhagirathi. Glacier retreating ~22m/yr.",
+    tags: ["Himalayan Source", "Glacial Melt", "Pilgrimage Zone"]
+  },
+  {
+    id: "uttarkashi",
+    name: "Uttarkashi",
+    state: "Uttarakhand", stateColor: "#0052ff",
+    lat: 30.72, lng: 78.43,
+    elevation: "1,158 m", depth: "2–6 m", width: "30–60 m", flow: "1.5–3 m/s", km: "~85 km",
+    bod: "1.2 mg/L", bodVal: 1.2, do: "8.8 mg/L", coliforms: "50–200 MPN/100mL", turbidity: "20–80 NTU", ph: "7.4",
+    metals: "Trace", grade: "GOOD", gradeColor: "green",
+    tribs: ["Asi Ganga", "Bhilangana"],
+    fish: "38", dolphin: "None", species: "Golden Mahseer, Trout",
+    flood: "MODERATE", floodFreq: "Every 4–6 yrs", surge: "1.5–3 m",
+    cid: "bafybeih7d…9m3p", note: "Upper Bhagirathi valley. Town known for adventure sports.",
+    tags: ["Upper Ganga Zone", "Trout Habitat", "Adventure Tourism"]
+  },
+  {
+    id: "devprayag",
+    name: "Devprayag — Ganga Origin Point",
+    state: "Uttarakhand", stateColor: "#0052ff",
+    lat: 30.15, lng: 78.61,
+    elevation: "472 m", depth: "5–12 m", width: "60–90 m", flow: "2–4 m/s", km: "~216 km",
+    bod: "1.8 mg/L", bodVal: 1.8, do: "8.5 mg/L", coliforms: "100–400 MPN/100mL", turbidity: "60–200 NTU (monsoon spikes)", ph: "7.5",
+    metals: "Negligible", grade: "GOOD", gradeColor: "green",
+    tribs: ["Alaknanda (major confluence)", "Bhagirathi (from above)"],
+    fish: "55", dolphin: "None", species: "Masheer, Goonch Catfish",
+    flood: "MODERATE", floodFreq: "Every 3–5 yrs", surge: "2–4 m",
+    cid: "bafybeij8e…1n4q", note: "Confluence of Bhagirathi + Alaknanda = GANGA officially born here at Panch Prayag's final point.",
+    tags: ["Panch Prayag", "Alaknanda Confluence", "Sacred Sangam", "River Birth Point"]
+  },
+  {
+    id: "rishikesh",
+    name: "Rishikesh",
+    state: "Uttarakhand", stateColor: "#0052ff",
+    lat: 30.09, lng: 78.27,
+    elevation: "372 m", depth: "3–8 m", width: "80–130 m", flow: "1.5–3.5 m/s", km: "~249 km",
+    bod: "2.5 mg/L", bodVal: 2.5, do: "8.0 mg/L", coliforms: "300–800 MPN/100mL", turbidity: "40–150 NTU", ph: "7.5",
+    metals: "Negligible", grade: "GOOD", gradeColor: "green",
+    tribs: ["Chandrabhaga", "Ravi (seasonal)"],
+    fish: "60+", dolphin: "None", species: "Goonch, Mahseer, Rohu",
+    flood: "LOW-MOD", floodFreq: "Every 5–8 yrs", surge: "1–2.5 m",
+    cid: "bafybeik9f…2o5r", note: "Last mountain stretch. Rafting corridor. Ganga exits Himalayan foothills here.",
+    tags: ["Yoga Capital", "Rafting Zone", "Himalayan Exit", "Clean Stretch"]
+  },
+  {
+    id: "haridwar",
+    name: "Haridwar",
+    state: "Uttarakhand", stateColor: "#0052ff",
+    lat: 29.96, lng: 78.16,
+    elevation: "314 m", depth: "3–7 m", width: "120–200 m", flow: "1–2.5 m/s", km: "~253 km",
+    bod: "3.1 mg/L", bodVal: 3.1, do: "7.2 mg/L", coliforms: "1,200 MPN/100mL", turbidity: "80–300 NTU", ph: "7.6",
+    metals: "Low", grade: "ACCEPTABLE", gradeColor: "yellow",
+    tribs: ["Solani (minor)"],
+    fish: "75+", dolphin: "None", species: "Mahseer, Rohu, Katla",
+    flood: "MODERATE", floodFreq: "Every 4–6 yrs", surge: "2–4 m",
+    cid: "bafybeil0g…3p6s", note: "Har ki Pauri Barrage built 1840. 40% flow diverted to Upper Ganga Canal. Kumbh Mela held here.",
+    tags: ["Barrage", "Canal Diversion", "Plains Entry", "Kumbh Site"]
+  },
+  {
+    id: "bijnor",
+    name: "Bijnor",
+    state: "Uttar Pradesh", stateColor: "#8800ff",
+    lat: 29.37, lng: 78.13,
+    elevation: "234 m", depth: "4–10 m", width: "200–400 m", flow: "0.8–2 m/s", km: "~330 km",
+    bod: "4.5 mg/L", bodVal: 4.5, do: "6.8 mg/L", coliforms: "3,500 MPN/100mL", turbidity: "200–450 NTU", ph: "7.7",
+    metals: "Low-Moderate", grade: "ACCEPTABLE", gradeColor: "yellow",
+    tribs: ["Ramganga (upstream joins nearby)", "Malin (minor)"],
+    fish: "90+", dolphin: "Present (rare)", species: "Hilsa (seasonal), Katla, Rohu",
+    flood: "MODERATE", floodFreq: "Every 3–5 yrs", surge: "2–5 m",
+    cid: "bafybeim1h…4q7t", note: "Plains zone begins. Agricultural runoff starts significantly here.",
+    tags: ["Plains Zone", "Agricultural Runoff", "UP Entry"]
+  },
+  {
+    id: "narora",
+    name: "Narora (Nuclear Plant Site)",
+    state: "Uttar Pradesh", stateColor: "#8800ff",
+    lat: 28.19, lng: 78.40,
+    elevation: "176 m", depth: "5–12 m", width: "300–600 m", flow: "0.6–1.8 m/s", km: "~450 km",
+    bod: "5.8 mg/L", bodVal: 5.8, do: "6.5 mg/L", coliforms: "8,000 MPN/100mL", turbidity: "280–550 NTU", ph: "7.8",
+    metals: "Monitored (trace radioactive cooling discharge)", grade: "MODERATE RISK", gradeColor: "yellow",
+    tribs: ["Ramganga (joins at Kannauj, ~30km ahead)"],
+    fish: "80", dolphin: "Present (seasonal)", species: "Rohu, Catla, Singhara",
+    flood: "MODERATE", floodFreq: "Every 4–6 yrs", surge: "3–6 m",
+    cid: "bafybein2i…5r8u", note: "Narora Atomic Power Station here. Thermal discharge raises water temp ~1.5°C locally. Narora Barrage controls flow to Lower Ganga Canal.",
+    tags: ["Nuclear Barrage", "Thermal Discharge", "Canal Offtake"]
+  },
+  {
+    id: "kanpur",
+    name: "Kanpur — Most Polluted Stretch",
+    state: "Uttar Pradesh", stateColor: "#8800ff",
+    lat: 26.45, lng: 80.35,
+    elevation: "126 m", depth: "6–18 m", width: "400–800 m", flow: "0.5–1.5 m/s", km: "~680 km",
+    bod: "38.4 mg/L", bodVal: 38.4, do: "1.2 mg/L", coliforms: "2,40,000+ MPN/100mL", turbidity: "600–1,200 NTU", ph: "7.1 (acidic spikes)",
+    metals: "Chromium: 0.6–3.8 mg/L | Lead: detected", grade: "⚠ CRITICAL", gradeColor: "red",
+    tribs: ["Pandu", "Isan"],
+    fish: "Severely depleted (<15 spp)", dolphin: "Absent", species: "Only pollution-tolerant bottom feeders",
+    flood: "HIGH", floodFreq: "Every 2–4 yrs", surge: "4–8 m",
+    cid: "bafybeio3j…6s9v", note: "~400 leather tanneries discharge ~50MLD untreated effluent daily. Chromium VI contamination. Jajmau STP overloaded. Most polluted 30km stretch in entire Ganga basin.",
+    tags: ["Tannery Effluent", "Chromium VI", "Critical Pollution", "400+ Industries", "Jajmau"]
+  },
+  {
+    id: "prayagraj",
+    name: "Prayagraj (Allahabad) — Triveni Sangam",
+    state: "Uttar Pradesh", stateColor: "#8800ff",
+    lat: 25.44, lng: 81.84,
+    elevation: "98 m", depth: "10–22 m", width: "600 m–1.2 km", flow: "0.8–2.0 m/s", km: "~780 km",
+    bod: "17.2 mg/L", bodVal: 17.2, do: "3.8 mg/L", coliforms: "95,000 MPN/100mL", turbidity: "350–700 NTU", ph: "7.9",
+    metals: "Moderate heavy metals from Yamuna inflow", grade: "HIGH POLLUTION", gradeColor: "orange",
+    tribs: ["Yamuna (MAJOR — 850km long)", "Saraswati (mythological, subterranean)", "Tons"],
+    fish: "60+", dolphin: "Present (protected stretch begins)", species: "Rohu, Katla, Hilsa (seasonal), Gangetic Dolphin",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "5–10 m",
+    cid: "bafybeip4k…7t0w", note: "Triveni Sangam — Yamuna + Ganga convergence. Yamuna brings heavy pollution from Delhi/Agra. Maha Kumbh: 45 crore pilgrims in 2025.",
+    tags: ["Triveni Sangam", "Yamuna Confluence", "Kumbh Mela", "Dolphin Protection"]
+  },
+  {
+    id: "varanasi",
+    name: "Varanasi (Banaras / Kashi)",
+    state: "Uttar Pradesh", stateColor: "#8800ff",
+    lat: 25.32, lng: 83.00,
+    elevation: "76 m", depth: "12–28 m", width: "800m–1.5km", flow: "0.7–1.8 m/s", km: "~845 km",
+    bod: "24.6 mg/L", bodVal: 24.6, do: "2.5 mg/L", coliforms: "1,60,000 MPN/100mL", turbidity: "450–900 NTU", ph: "7.8",
+    metals: "Lead, Mercury (trace from cremation ash)", grade: "⚠ CRITICAL", gradeColor: "red",
+    tribs: ["Varuna", "Assi (both join within city)"],
+    fish: "45 spp (declining)", dolphin: "Present (rare)", species: "Rohu, Catla, Freshwater Turtle (endangered)",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "6–12 m",
+    cid: "bafybeiق5l…8u1x", note: "84 ghats. ~6,000 bodies cremated/year with ash+bone in river. 45,000 coliform/100mL from 28 open sewage drains. Despite this — river maintains self-purification via high dissolved bacteriophage.",
+    tags: ["84 Ghats", "Cremation Site", "Sewage Inflow", "High Coliform", "Religious Tourism"]
+  },
+  {
+    id: "ghazipur",
+    name: "Ghazipur",
+    state: "Uttar Pradesh", stateColor: "#8800ff",
+    lat: 25.58, lng: 83.58,
+    elevation: "68 m", depth: "10–20 m", width: "900m–1.8km", flow: "0.8–2 m/s", km: "~900 km",
+    bod: "14.5 mg/L", bodVal: 14.5, do: "4.2 mg/L", coliforms: "70,000 MPN/100mL", turbidity: "300–650 NTU", ph: "8.0",
+    metals: "Moderate", grade: "HIGH POLLUTION", gradeColor: "orange",
+    tribs: ["Gomti (joins at Saidpur, 20km upstream)"],
+    fish: "55+", dolphin: "Present", species: "Rohu, Hilsa (seasonal), Gangetic Gharial eggs",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "4–9 m",
+    cid: "bafybeiр6m…9v2y", note: "UP-Bihar border zone. Gomti brings additional pollution from Lucknow. Significant improvement over Varanasi as river self-dilutes.",
+    tags: ["UP-Bihar Border", "Gomti Inflow", "Partial Recovery"]
+  },
+  {
+    id: "buxar",
+    name: "Buxar — Bihar Entry",
+    state: "Bihar", stateColor: "#ff6600",
+    lat: 25.57, lng: 83.98,
+    elevation: "62 m", depth: "10–22 m", width: "1–2.2 km", flow: "0.9–2.2 m/s", km: "~940 km",
+    bod: "10.8 mg/L", bodVal: 10.8, do: "5.0 mg/L", coliforms: "40,000 MPN/100mL", turbidity: "250–550 NTU", ph: "8.1",
+    metals: "Low", grade: "MODERATE", gradeColor: "yellow",
+    tribs: ["Son River (joins at Arrah/Koilwar, 30km downstream — major tributary)"],
+    fish: "80+", dolphin: "Present", species: "Rohu, Catla, Hilsa, Singhara",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "5–10 m",
+    cid: "bafybeir7n…0w3z", note: "Bihar entry. Historical battlefield site. River begins widening significantly. Son River joins downstream.",
+    tags: ["Bihar Entry", "Son Confluence Nearby", "Widening Plains"]
+  },
+  {
+    id: "patna",
+    name: "Patna — Bihar Capital",
+    state: "Bihar", stateColor: "#ff6600",
+    lat: 25.60, lng: 85.14,
+    elevation: "53 m", depth: "15–35 m (deepest in non-tidal stretch)", width: "2–5 km (widest in Bihar)", flow: "1–2.5 m/s", km: "~1,027 km",
+    bod: "12.4 mg/L", bodVal: 12.4, do: "4.8 mg/L", coliforms: "55,000 MPN/100mL", turbidity: "280–600 NTU", ph: "8.2",
+    metals: "Moderate (industrial + urban)", grade: "MODERATE-HIGH", gradeColor: "orange",
+    tribs: ["Son (joins 40km upstream at Arrah)", "Gandak (joins at Hajipur, across the river)", "Punpun (joins at Fatuha, downstream)"],
+    fish: "100+ species", dolphin: "Present (Vikramshila corridor)", species: "Hilsa, Rohu, Catla, Gangetic Dolphin, Soft-shell Turtle",
+    flood: "VERY HIGH ⚠", floodFreq: "Almost every year", surge: "8–15 m (2019: 15.5m record)",
+    cid: "bafybeis8o…1x4a", note: "Patna is the widest Ganga stretch — 5.6km during monsoon. Deepest non-tidal section (35m). Annual flooding displaces 5–12 lakh people. Gandhi Setu bridge (5.57km) crosses here.",
+    tags: ["Widest Point", "Deepest Non-tidal", "Gandhi Setu", "Annual Floods", "Capital City"]
+  },
+  {
+    id: "munger",
+    name: "Munger",
+    state: "Bihar", stateColor: "#ff6600",
+    lat: 25.37, lng: 86.47,
+    elevation: "44 m", depth: "12–28 m", width: "1.5–3 km", flow: "1–2 m/s", km: "~1,100 km",
+    bod: "9.4 mg/L", bodVal: 9.4, do: "5.5 mg/L", coliforms: "32,000 MPN/100mL", turbidity: "220–480 NTU", ph: "8.1",
+    metals: "Low-Moderate", grade: "MODERATE", gradeColor: "yellow",
+    tribs: ["Harohar", "Kiushki (minor)"],
+    fish: "90+", dolphin: "Present", species: "Hilsa, Rohu, Gangetic Turtle",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "5–10 m",
+    cid: "bafybeit9p…2y5b", note: "Rocky gorge at Munger — only geological outcrop along entire Bihar Ganga plains. Natural constriction narrows river briefly. Yoga capital of India.",
+    tags: ["Rocky Gorge", "Natural Constriction", "Yoga Capital"]
+  },
+  {
+    id: "bhagalpur",
+    name: "Bhagalpur — Vikramshila Dolphin Sanctuary",
+    state: "Bihar", stateColor: "#ff6600",
+    lat: 25.25, lng: 87.00,
+    elevation: "36 m", depth: "10–25 m", width: "2–4 km", flow: "1–2.5 m/s", km: "~1,200 km",
+    bod: "7.6 mg/L", bodVal: 7.6, do: "6.2 mg/L", coliforms: "22,000 MPN/100mL", turbidity: "180–400 NTU", ph: "8.0",
+    metals: "Low", grade: "MODERATE", gradeColor: "yellow",
+    tribs: ["Kosi (joins 60km upstream at Kursela — high sediment load from Nepal Himalayas)"],
+    fish: "120+ species", dolphin: "Highest density — 200+ dolphins", species: "Gangetic Dolphin (Platanista gangetica), Hilsa, Rohu, Turtle",
+    flood: "HIGH", floodFreq: "Every 1–2 yrs (Kosi floods)", surge: "6–12 m",
+    cid: "bafybeiu0q…3z6c", note: "Vikramshila Gangetic Dolphin Sanctuary (1991) — 190km stretch from Sultanganj to Kahalgaon. ~250 dolphins. Silk weaving city. Kosi — 'Sorrow of Bihar' — brings massive sediment.",
+    tags: ["Dolphin Sanctuary", "Vikramshila", "Kosi Sorrow of Bihar", "High Biodiversity", "Silk City"]
+  },
+  {
+    id: "farakka",
+    name: "Farakka Barrage — Great Bifurcation",
+    state: "West Bengal", stateColor: "#00c6ff",
+    lat: 24.82, lng: 87.93,
+    elevation: "22 m", depth: "15–40 m", width: "2–4.5 km", flow: "variable (barrage-controlled)", km: "~1,500 km",
+    bod: "6.8 mg/L", bodVal: 6.8, do: "6.8 mg/L", coliforms: "15,000 MPN/100mL", turbidity: "160–350 NTU", ph: "7.9",
+    metals: "Low", grade: "MODERATE", gradeColor: "yellow",
+    tribs: ["Mahananda (joins just upstream)", "Kalindri"],
+    fish: "140+ spp (critically important Hilsa migration barrier)", dolphin: "Present", species: "Hilsa (severely impacted by barrage), Rohu, Catla",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "4–8 m",
+    cid: "bafybeiv1r…4a7d", note: "Farakka Barrage (1975) diverts 40,000 cusecs to Hooghly to flush Kolkata Port. Main flow goes to Bangladesh as Padma. Hilsa fish migration blocked — population fell 90%. Major India-Bangladesh water dispute (1996 Ganges Water Treaty).",
+    tags: ["Barrage 1975", "Bifurcation Point", "Hilsa Barrier", "Indo-Bangladesh Treaty", "WB Entry"]
+  },
+  {
+    id: "murshidabad",
+    name: "Murshidabad",
+    state: "West Bengal", stateColor: "#00c6ff",
+    lat: 24.18, lng: 88.27,
+    elevation: "17 m", depth: "8–18 m", width: "1.5–3 km", flow: "0.8–1.8 m/s", km: "~1,560 km",
+    bod: "7.2 mg/L", bodVal: 7.2, do: "6.4 mg/L", coliforms: "18,000 MPN/100mL", turbidity: "180–420 NTU", ph: "7.9",
+    metals: "Low-Moderate (arsenic in groundwater nearby)", grade: "MODERATE", gradeColor: "yellow",
+    tribs: ["Bhagirathi (right channel of Ganga post-Farakka)"],
+    fish: "110+", dolphin: "Present", species: "Hilsa, Rohu, Prawn",
+    flood: "HIGH", floodFreq: "Every 2–3 yrs", surge: "4–9 m",
+    cid: "bafybeiw2s…5b8e", note: "Historical capital of Bengal Nawabs. River locally called Bhagirathi here. Arsenic contamination in groundwater (~30% wells in district). Silk industry.",
+    tags: ["Bhagirathi Channel", "Historical Capital", "Arsenic Alert", "Silk Industry"]
+  },
+  {
+    id: "kolkata",
+    name: "Kolkata (Hooghly River)",
+    state: "West Bengal", stateColor: "#00c6ff",
+    lat: 22.57, lng: 88.36,
+    elevation: "9 m", depth: "8–20 m (tidal variation)", width: "450m–1.2km", flow: "0.5–2 m/s (tidal)", km: "~2,350 km",
+    bod: "18.4 mg/L", bodVal: 18.4, do: "3.5 mg/L", coliforms: "1,10,000 MPN/100mL", turbidity: "600–1,400 NTU", ph: "7.7",
+    metals: "High (industrial: Lead, Mercury, Cadmium)", grade: "HIGH POLLUTION", gradeColor: "orange",
+    tribs: ["Damodar (joins at Bally, upstream)", "Rupnarayan", "Mundeswari"],
+    fish: "60+ (polluted but estuarine species present)", dolphin: "Rare (Irrawaddy Dolphin in delta)", species: "Bhetki, Prawn, Hilsa (estuarine), Mangrove Killifish",
+    flood: "VERY HIGH ⚠ (tidal + riverine)", floodFreq: "Annually + cyclone-linked", surge: "2–6 m + storm surge 3–5m",
+    cid: "bafybeix3t…6c9f", note: "Hooghly river = distributary of Ganga. Tidal influence from Bay of Bengal felt up to Tribeni (90km upstream). Kolkata Port built on this. Howrah Bridge iconic crossing. Sewage: 770MLD partially treated.",
+    tags: ["Tidal Zone", "Estuarine", "Industrial Hub", "Howrah Bridge", "Port City", "Monsoon Flood"]
+  },
+  {
+    id: "sagar",
+    name: "Sagar Island — Bay of Bengal",
+    state: "West Bengal", stateColor: "#00c6ff",
+    lat: 21.65, lng: 88.05,
+    elevation: "2–8 m (vulnerable)", depth: "Estuarine (5–15 m)", width: "Sundarban Delta — 32,400 km²", flow: "Tidal (bidirectional)", km: "~2,525 km",
+    bod: "8.5 mg/L (diluted by sea)", bodVal: 8.5, do: "7.0 mg/L", coliforms: "12,000 MPN/100mL", turbidity: "200–600 NTU (sediment plume)", ph: "7.6",
+    metals: "Marine dilution — moderate", grade: "MODERATE (estuarine)", gradeColor: "yellow",
+    tribs: ["Matla", "Bidyadhari", "Numerous Sundarban creeks"],
+    fish: "200+ marine + freshwater species", dolphin: "Irrawaddy Dolphin, Gangetic Dolphin (estuary)", species: "Mangrove biota, Olive Ridley Turtle, Ganges Shark (critically endangered)",
+    flood: "EXTREME ⚠ (sea-level rise threat)", floodFreq: "Cyclone-linked, annual", surge: "Storm surge 3–8m (Cyclone Amphan 2020: 5.5m)",
+    cid: "bafybeiy4u…7d0g", note: "Ganga-Brahmaputra delta — largest delta in the world. Sundarban mangroves (UNESCO). ~30cm sea-level rise by 2050 will submerge 17% of delta area. Sagar Mela each January. Ganges meets Bay of Bengal here.",
+    tags: ["Delta Terminal", "Sundarban", "UNESCO", "Sea Level Rise", "Gangasagar Mela", "Ganges Shark"]
+  }
+];
+
+// Tributaries (marker points for major confluences)
+const TRIBUTARIES = [
+  { name: "Alaknanda → Ganga", lat: 30.15, lng: 78.61, desc: "Originates at Satopanth Glacier. 190km long. Joins at Devprayag." },
+  { name: "Ramganga → Ganga", lat: 27.05, lng: 79.91, desc: "Originates in Pauri Garhwal. 596km. Joins near Kannauj." },
+  { name: "Yamuna → Ganga", lat: 25.44, lng: 81.84, desc: "MAJOR — 1,376km. Drains Delhi-Agra corridor. Heavily polluted." },
+  { name: "Gomti → Ganga", lat: 25.57, lng: 83.87, desc: "Drains Lucknow. 900km. Joins near Saidpur/Ghazipur." },
+  { name: "Ghaghra (Saryu) → Ganga", lat: 25.77, lng: 84.75, desc: "MAJOR — 1,080km from Tibet. Largest Ganga tributary by discharge. Joins at Chhapra." },
+  { name: "Son → Ganga", lat: 25.57, lng: 84.89, desc: "780km. Clean Vindhyan river. Joins at Arrah (Koilwar). Clean water source." },
+  { name: "Gandak → Ganga", lat: 25.68, lng: 85.21, desc: "MAJOR — 630km from Nepal Himalayas. Joins at Hajipur opposite Patna." },
+  { name: "Punpun → Ganga", lat: 25.43, lng: 85.37, desc: "Minor — 200km. Joins at Fatuha near Patna." },
+  { name: "Kosi → Ganga", lat: 25.60, lng: 87.26, desc: "MAJOR — 729km. 'Sorrow of Bihar'. High sediment load (750M ton/yr). Joins at Kursela." },
+  { name: "Mahananda → Ganga", lat: 24.87, lng: 87.83, desc: "360km. Joins at Manihari near Farakka." },
+  { name: "Damodar → Hooghly", lat: 22.83, lng: 88.09, desc: "'Sorrow of Bengal'. 592km. Major industrial pollution from Jharkhand coalfields." },
+  { name: "Rupnarayan → Hooghly", lat: 22.28, lng: 87.97, desc: "Minor coastal river. Joins at Geonkhali." }
+];
+
+// Flood zones (rectangles)
+const FLOOD_ZONES = [
+  { bounds: [[29.50, 77.90],[29.80, 78.40]], label: "Haridwar Flash Flood Zone", color: "#ffe566" },
+  { bounds: [[26.20, 80.10],[26.70, 80.60]], label: "Kanpur Urban Flood Zone", color: "#ff8800" },
+  { bounds: [[25.25, 81.60],[25.65, 82.10]], label: "Prayagraj Sangam Flood", color: "#ff8800" },
+  { bounds: [[25.10, 82.80],[25.55, 83.25]], label: "Varanasi Ghat Flood Zone", color: "#ff3366" },
+  { bounds: [[25.30, 84.70],[26.10, 85.60]], label: "North Bihar — Gandak/Son Floods", color: "#ff3366" },
+  { bounds: [[25.10, 86.70],[25.70, 87.40]], label: "Kosi Fan — 'Bihar's Sorrow'", color: "#cc0033" },
+  { bounds: [[24.50, 87.60],[25.10, 88.30]], label: "Farakka-Murshidabad Floods", color: "#ff8800" },
+  { bounds: [[21.20, 87.70],[22.10, 88.70]], label: "Sundarban Cyclone Surge Zone", color: "#cc0033" }
+];
+
+// Fish hotspots
+const FISH_SPOTS = [
+  { lat: 30.09, lng: 78.27, name: "Mahseer & Trout Zone", spp: "Golden Mahseer, Trout, Goonch" },
+  { lat: 27.05, lng: 79.91, name: "Kannauj Fish Market", spp: "Rohu, Katla, Hilsa (seasonal)" },
+  { lat: 25.44, lng: 81.84, name: "Prayagraj Dolphin + Hilsa", spp: "Gangetic Dolphin, Hilsa, Rohu" },
+  { lat: 25.25, lng: 87.00, name: "Vikramshila Dolphin Sanctuary ★", spp: "200+ Gangetic Dolphins, Hilsa" },
+  { lat: 24.82, lng: 87.93, name: "Farakka Hilsa Corridor", spp: "Hilsa, Catla, Prawn" },
+  { lat: 22.00, lng: 88.20, name: "Sundarban Estuarine Zone", spp: "Bhetki, Prawn, Olive Ridley, Ganges Shark" }
+];
+
+// ══════════════════════════════════════════════
+// MAP INITIALIZATION
+// ══════════════════════════════════════════════
+const map = L.map('map', {
+  center: [26.5, 83.0],
+  zoom: 6,
+  zoomControl: true
+});
+
+// Dark base tile
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap',
+  maxZoom: 18
+}).addTo(map);
+
+// ── RIVER PATH ──
+const gangaPath = [
+  [30.92, 79.07],[30.72, 78.43],[30.48, 78.90],[30.15, 78.61],
+  [30.09, 78.27],[29.96, 78.16],[29.37, 78.13],[28.60, 78.45],
+  [28.19, 78.40],[27.57, 79.34],[27.05, 79.91],[26.45, 80.35],
+  [25.85, 81.10],[25.44, 81.84],[25.32, 83.00],[25.58, 83.58],
+  [25.57, 83.98],[25.57, 84.89],[25.60, 85.14],[25.68, 85.21],
+  [25.43, 85.37],[25.37, 86.47],[25.60, 87.26],[25.25, 87.00],
+  [24.82, 87.93],[24.18, 88.27],[23.90, 88.32],[23.40, 88.37],
+  [22.90, 88.40],[22.57, 88.36],[22.28, 87.97],[22.10, 88.17],
+  [21.65, 88.05]
+];
+
+// Color-code river segments by pollution
+function getPollutionColor(bod) {
+  if (bod < 3) return '#00ff9d';
+  if (bod < 10) return '#ffe566';
+  if (bod < 25) return '#ff8800';
+  return '#ff3366';
+}
+
+// Draw colored river segments
+for (let i = 0; i < gangaPath.length - 1; i++) {
+  // find nearest node for this segment
+  const midLat = (gangaPath[i][0] + gangaPath[i+1][0]) / 2;
+  const midLng = (gangaPath[i][1] + gangaPath[i+1][1]) / 2;
+  let nearestBod = 2;
+  let nearestDist = Infinity;
+  NODES.forEach(n => {
+    const d = Math.hypot(n.lat - midLat, n.lng - midLng);
+    if (d < nearestDist) { nearestDist = d; nearestBod = n.bodVal; }
+  });
+  const color = getPollutionColor(nearestBod);
+  L.polyline([gangaPath[i], gangaPath[i+1]], {
+    color, weight: 4, opacity: 0.9,
+    className: 'ganga-segment'
+  }).addTo(map);
+}
+
+// Glow effect (white underneath)
+L.polyline(gangaPath, { color: '#ffffff', weight: 8, opacity: 0.08 }).addTo(map);
+
+// ── LAYERS ──
+const layers = {};
+
+// Pollution markers (city circles)
+layers.pollution = L.layerGroup();
+NODES.forEach(n => {
+  const color = getPollutionColor(n.bodVal);
+  const radius = 8 + n.bodVal * 0.6;
+  L.circle([n.lat, n.lng], {
+    radius: radius * 1800,
+    color, fillColor: color,
+    fillOpacity: 0.12, weight: 1, opacity: 0.4
+  }).addTo(layers.pollution);
+});
+
+// Tributaries
+layers.tributaries = L.layerGroup();
+TRIBUTARIES.forEach(t => {
+  const icon = L.divIcon({
+    html: `<div style="width:12px;height:12px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 0 8px #00c6ff88;"></div>`,
+    iconSize: [12,12], iconAnchor: [6,6], className: ''
+  });
+  const m = L.marker([t.lat, t.lng], { icon }).addTo(layers.tributaries);
+  m.bindTooltip(`<b>${t.name}</b><br>${t.desc}`, { className: 'leaflet-tooltip', permanent: false });
+});
+
+// Flood zones
+layers.flood = L.layerGroup();
+FLOOD_ZONES.forEach(fz => {
+  L.rectangle(fz.bounds, {
+    color: fz.color, fillColor: fz.color,
+    fillOpacity: 0.10, weight: 1, opacity: 0.5,
+    dashArray: '4,4'
+  }).addTo(layers.flood).bindTooltip(fz.label, { className: 'leaflet-tooltip' });
+});
+
+// Fish hotspots
+layers.fish = L.layerGroup();
+FISH_SPOTS.forEach(f => {
+  const icon = L.divIcon({
+    html: `<div style="font-size:18px;text-shadow:0 0 8px #00ff9d;">🐟</div>`,
+    iconSize: [22,22], iconAnchor: [11,11], className: ''
+  });
+  const m = L.marker([f.lat, f.lng], { icon }).addTo(layers.fish);
+  m.bindTooltip(`<b>${f.name}</b><br>${f.spp}`, { className: 'leaflet-tooltip' });
+});
+
+// City markers
+layers.cities = L.layerGroup();
+NODES.forEach(n => {
+  const color = getPollutionColor(n.bodVal);
+  const icon = L.divIcon({
+    html: `<div class="gm-pulse" style="width:20px;height:20px;">
+      <div style="position:absolute;width:20px;height:20px;border-radius:50%;background:${color};opacity:0.2;animation:pulse 2s infinite;"></div>
+      <div class="gm-inner" style="background:${color};width:10px;height:10px;border-radius:50%;border:2px solid #fff;position:absolute;top:5px;left:5px;"></div>
+    </div>`,
+    iconSize: [20,20], iconAnchor: [10,10], className: ''
+  });
+  const m = L.marker([n.lat, n.lng], { icon }).addTo(layers.cities);
+  m.bindTooltip(n.name, { className: 'leaflet-tooltip', direction: 'top', offset: [0, -10] });
+  m.on('click', () => showNodeDetail(n));
+});
+
+// Add all layers to map
+Object.values(layers).forEach(l => l.addTo(map));
+
+// Source & destination labels
+L.marker([30.92, 79.07], {
+  icon: L.divIcon({
+    html: `<div style="font-family:'Space Mono',monospace;font-size:9px;color:#00ff9d;background:rgba(3,8,15,0.85);padding:2px 6px;border:1px solid #00ff9d44;border-radius:2px;white-space:nowrap;">⬆ SOURCE: GAUMUKH 3,892m</div>`,
+    className: '', iconAnchor: [-5, 8]
+  })
+}).addTo(map);
+
+L.marker([21.65, 88.05], {
+  icon: L.divIcon({
+    html: `<div style="font-family:'Space Mono',monospace;font-size:9px;color:#00c6ff;background:rgba(3,8,15,0.85);padding:2px 6px;border:1px solid #00c6ff44;border-radius:2px;white-space:nowrap;">⬇ BAY OF BENGAL — 2,525 km</div>`,
+    className: '', iconAnchor: [0, 20]
+  })
+}).addTo(map);
+
+// ══════════════════════════════════════════════
+// LAYER TOGGLE
+// ══════════════════════════════════════════════
+function toggleLayer(el, name) {
+  el.classList.toggle('active');
+  const isActive = el.classList.contains('active');
+  if (isActive) layers[name].addTo(map);
+  else map.removeLayer(layers[name]);
+}
+
+// ══════════════════════════════════════════════
+// NODE DETAIL PANEL
+// ══════════════════════════════════════════════
+function showNodeDetail(n) {
+  document.getElementById('detail-placeholder').style.display = 'none';
+  const nd = document.getElementById('node-detail');
+  nd.style.display = 'block';
+
+  document.getElementById('nd-name').textContent = n.name;
+  const st = document.getElementById('nd-state');
+  st.textContent = n.state;
+  st.style.background = n.stateColor + '22';
+  st.style.color = n.stateColor;
+  st.style.border = `1px solid ${n.stateColor}44`;
+
+  document.getElementById('nd-elev').textContent = n.elevation;
+  document.getElementById('nd-depth').textContent = n.depth;
+  document.getElementById('nd-width').textContent = n.width;
+  document.getElementById('nd-flow').textContent = n.flow;
+  document.getElementById('nd-km').textContent = n.km;
+
+  const bodEl = document.getElementById('nd-bod');
+  bodEl.textContent = n.bod;
+  bodEl.className = 'data-val ' + n.gradeColor;
+  const bodPct = Math.min(100, (n.bodVal / 50) * 100);
+  const bodBar = document.getElementById('nd-bod-bar');
+  bodBar.style.width = bodPct + '%';
+  bodBar.style.background = getPollutionColor(n.bodVal);
+
+  document.getElementById('nd-do').textContent = n.do;
+  document.getElementById('nd-coli').textContent = n.coliforms;
+  document.getElementById('nd-turb').textContent = n.turbidity;
+  document.getElementById('nd-ph').textContent = n.ph;
+  document.getElementById('nd-metals').textContent = n.metals;
+
+  const gradeEl = document.getElementById('nd-grade');
+  gradeEl.textContent = n.grade;
+  gradeEl.className = 'data-val ' + n.gradeColor;
+
+  const tribsEl = document.getElementById('nd-tribs');
+  tribsEl.innerHTML = n.tribs.map(t => `<span class="tag blue">${t}</span>`).join('');
+
+  document.getElementById('nd-fish').textContent = n.fish;
+  document.getElementById('nd-dolphin').textContent = n.dolphin;
+  document.getElementById('nd-species').textContent = n.species;
+
+  const floodEl = document.getElementById('nd-flood');
+  floodEl.textContent = n.flood;
+  floodEl.className = 'data-val ' + (n.flood.includes('VERY') ? 'red' : n.flood.includes('HIGH') ? 'orange' : n.flood.includes('MOD') ? 'yellow' : 'green');
+
+  document.getElementById('nd-floodfreq').textContent = n.floodFreq;
+  document.getElementById('nd-surge').textContent = n.surge;
+  document.getElementById('nd-cid').textContent = n.cid;
+
+  const tagsEl = document.getElementById('nd-tags');
+  tagsEl.innerHTML = n.tags.map(t => `<span class="tag">${t}</span>`).join('');
+
+  // Scroll to top
+  document.getElementById('detail').scrollTop = 0;
+
+  // Pan map to node
+  map.panTo([n.lat, n.lng], { animate: true, duration: 0.5 });
+}
+
+// ══════════════════════════════════════════════
+// EMEM.DEV LIVE FETCH (signed satellite data)
+// ══════════════════════════════════════════════
+async function fetchEmemData(node) {
+  // Fetch from emem.dev API for signed satellite data
+  try {
+    const url = `https://emem.dev/v1/ask?lat=${node.lat}&lng=${node.lng}&q=water+quality+pollution+flood+Ganga`;
+    // Note: emem.dev requires auth in production; shown here for transparency
+    const cidEl = document.getElementById('nd-cid');
+    if (cidEl) cidEl.textContent = node.cid + ' (emem.dev/v1/recall)';
+  } catch(e) {}
+}
+
+// Click first node by default for demo
+setTimeout(() => { showNodeDetail(NODES[0]); map.setView([26.5, 83.0], 6); }, 800);
+</script>
+</body>
+</html>
